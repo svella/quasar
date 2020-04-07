@@ -9,6 +9,7 @@ import DarkMixin from '../../mixins/dark.js'
 import { stopAndPrevent } from '../../utils/event.js'
 import { shouldIgnoreKey } from '../../utils/key-composition.js'
 import { cache } from '../../utils/vm.js'
+import uid from '../../utils/uid.js'
 
 export default Vue.extend({
   name: 'QTree',
@@ -62,7 +63,10 @@ export default Vue.extend({
     noConnectors: Boolean,
 
     noNodesLabel: String,
-    noResultsLabel: String
+    noResultsLabel: String,
+
+    arrowNavigation: Boolean,
+    cursor: {} // sync
   },
 
   computed: {
@@ -124,6 +128,8 @@ export default Vue.extend({
           lazy = this.lazy[key]
         }
 
+        let link = !this.arrowNavigation && node.disabled !== true && (selectable === true || (expandable === true && (isParent === true || lazy === true)))
+
         const m = {
           key,
           parent,
@@ -131,7 +137,8 @@ export default Vue.extend({
           isLeaf,
           lazy,
           disabled: node.disabled,
-          link: node.disabled !== true && (selectable === true || (expandable === true && (isParent === true || lazy === true))),
+          link: link,
+          tabindex: (link || (this.arrowNavigation && this.cursor === key)) ? 0 : -1,
           children: [],
           matchesFilter: this.filter ? this.filterMethod(node, this.filter) : true,
 
@@ -213,7 +220,9 @@ export default Vue.extend({
     return {
       lazy: {},
       innerTicked: this.ticked || [],
-      innerExpanded: this.expanded || []
+      innerExpanded: this.expanded || [],
+      innerCursor: {},
+      treeUid: `qtree-${uid()}`
     }
   },
 
@@ -224,6 +233,10 @@ export default Vue.extend({
 
     expanded (val) {
       this.innerExpanded = val
+    },
+
+    cursor (val) {
+      this.__blur(val)
     }
   },
 
@@ -458,6 +471,8 @@ export default Vue.extend({
 
       const isParent = children.length > 0 || (meta.lazy && meta.lazy !== 'loaded')
 
+      const childGroupUid = isParent ? `${this.treeUid}-group-${key}` : void 0
+
       let
         body = node.body
           ? this.$scopedSlots[`body-${node.body}`] || this.$scopedSlots['default-body']
@@ -484,17 +499,64 @@ export default Vue.extend({
           class: {
             'q-tree__node--link q-hoverable q-focusable': meta.link,
             'q-tree__node--selected': meta.selected,
-            'q-tree__node--disabled': meta.disabled
+            'q-tree__node--disabled': meta.disabled,
+            'q-tree__node--link q-hoverable q-focusable q-manual-focusable': this.arrowNavigation,
+            'q-manual-focusable--focused': this.arrowNavigation && meta.key === this.innerCursor
+
           },
-          attrs: { tabindex: meta.link ? 0 : -1 },
+          attrs: {
+            tabindex: meta.tabindex,
+            role: 'treeitem',
+            'aria-label': node[this.labelKey],
+            'aria-selected': meta.selected || meta.ticked,
+            'aria-busy': meta.lazy === 'loading' || void 0,
+            // 'aria-checked': meta.hasTicking ? meta.ticked : void 0,
+            'aria-expanded': meta.isParent ? meta.expanded || 'false' : void 0,
+            'aria-disabled': meta.disabled,
+            'aria-owns': childGroupUid
+          },
           on: {
             click: (e) => {
               this.__onClick(node, meta, e)
             },
             keypress: e => {
               if (shouldIgnoreKey(e) !== true) {
-                if (e.keyCode === 13) { this.__onClick(node, meta, e, true) }
-                else if (e.keyCode === 32) { this.__onExpandClick(node, meta, e, true) }
+                if (e.keyCode === 13) {
+                  this.__onClick(node, meta, e, true)
+                }
+                else if (e.keyCode === 32) {
+                  if (this.arrowNavigation) {
+                    stopAndPrevent(e)
+                    this.__onTickedClick(meta, !meta.ticked)
+                  }
+                  else {
+                    this.__onExpandClick(node, meta, e, true)
+                  }
+                }
+              }
+            },
+            keydown: e => {
+              if (shouldIgnoreKey(e) !== true && this.arrowNavigation) {
+                switch (e.code) {
+                  case 'ArrowDown':
+                    this.__onArrowDown(node, meta, e)
+                    break
+                  case 'ArrowUp':
+                    this.__onArrowUp(node, meta, e)
+                    break
+                  case 'ArrowLeft':
+                    this.__onArrowLeft(node, meta, e)
+                    break
+                  case 'ArrowRight':
+                    this.__onArrowRight(node, meta, e)
+                    break
+                  case 'Home':
+                    this.__onHome(node, meta, e)
+                    break
+                  case 'End':
+                    this.__onEnd(node, meta, e)
+                    break
+                }
               }
             }
           }
@@ -530,10 +592,16 @@ export default Vue.extend({
                 dark: this.isDark,
                 dense: true,
                 keepColor: true,
-                disable: meta.tickable !== true
+                disable: meta.tickable !== true,
+                tabindex: this.arrowNavigation ? -1 : 0
               },
               on: {
                 keydown: stopAndPrevent,
+                mousedown: v => {
+                  if (this.arrowNavigation) {
+                    stopAndPrevent(v)
+                  }
+                },
                 input: v => {
                   this.__onTickedClick(meta, v)
                 }
@@ -571,7 +639,11 @@ export default Vue.extend({
 
               h('div', {
                 staticClass: 'q-tree__children',
-                class: { 'q-tree__node--disabled': meta.disabled }
+                class: { 'q-tree__node--disabled': meta.disabled },
+                attrs: {
+                  id: childGroupUid,
+                  role: 'group'
+                }
               }, children)
             ])
           ])
@@ -581,7 +653,13 @@ export default Vue.extend({
 
     __blur (key) {
       const blurTarget = this.$refs[`blurTarget_${key}`]
-      blurTarget !== void 0 && blurTarget.focus()
+      if (blurTarget !== void 0) {
+        blurTarget.focus()
+        if (this.arrowNavigation) {
+          this.innerCursor = key
+          this.$emit('update:cursor', key)
+        }
+      }
     },
 
     __onClick (node, meta, e, keyboard) {
@@ -638,6 +716,134 @@ export default Vue.extend({
         travel(meta)
         this.setTicked(keys, state)
       }
+    },
+
+    __onArrowLeft (node, meta, e) {
+      if (meta.isParent && meta.expanded) {
+        stopAndPrevent(e)
+        this.setExpanded(meta.key, false, node, meta)
+      }
+      else if (meta.parent) {
+        stopAndPrevent(e)
+        this.__blur(meta.parent.key)
+      }
+    },
+
+    __onArrowRight (node, meta, e) {
+      if (meta.isParent) {
+        if (meta.expanded) {
+          if (meta.children.length > 0) {
+            stopAndPrevent(e)
+            this.__blur(meta.children[0].key)
+          }
+        }
+        else {
+          stopAndPrevent(e)
+          this.setExpanded(meta.key, true, node, meta)
+        }
+      }
+    },
+
+    __onArrowUp (node, meta, e) {
+      let previous = this.__findPrevious(meta)
+      if (previous) {
+        stopAndPrevent(e)
+        previous && this.__blur(previous.key)
+      }
+    },
+
+    __onArrowDown (node, meta, e) {
+      let next = this.__findNext(meta)
+      if (next) {
+        stopAndPrevent(e)
+        this.__blur(next.key)
+      }
+    },
+
+    __onHome (node, meta, e) {
+      stopAndPrevent(e)
+      if (this.nodes.length > 0) {
+        this.__blur(this.nodes[0][this.nodeKey])
+      }
+    },
+
+    __onEnd (node, meta, e) {
+      stopAndPrevent(e)
+      if (this.nodes.length > 0) {
+        let last = this.meta[this.nodes[this.nodes.length - 1][this.nodeKey]]
+        while (last.isParent && last.expanded && last.children.length > 0) {
+          last = last.children[last.children.length - 1]
+        }
+        this.__blur(last.key)
+      }
+    },
+
+    __findNext (meta) {
+      if (meta.isParent && meta.expanded) {
+        return meta.children[0]
+      }
+      let nextSibling = this.__nextSibling(meta)
+      if (nextSibling) {
+        return nextSibling
+      }
+      let parent = meta.parent
+      while (parent) {
+        nextSibling = this.__nextSibling(parent)
+        if (nextSibling) {
+          return nextSibling
+        }
+        parent = parent.parent
+      }
+      return null
+    },
+
+    __findPrevious (meta) {
+      let previous = this.__previousSibling(meta)
+      if (previous) {
+        while (previous.isParent && previous.expanded && previous.children.length > 0) {
+          previous = previous.children[previous.children.length - 1]
+        }
+        return previous
+      }
+      return meta.parent
+    },
+
+    __nextSibling (meta) {
+      if (meta.parent) {
+        let siblings = meta.parent.children
+        let selfIndex = siblings.indexOf(meta)
+        if (selfIndex !== -1 && selfIndex < siblings.length - 1) {
+          return siblings[selfIndex + 1]
+        }
+      }
+      else {
+        let key = meta.key
+        let siblingNodes = this.nodes
+        let selfIndex = siblingNodes.findIndex(v => v[this.nodeKey] === key)
+        if (selfIndex !== -1 && selfIndex < siblingNodes.length - 1) {
+          return this.meta[siblingNodes[selfIndex + 1][this.nodeKey]]
+        }
+      }
+      return null
+    },
+
+    __previousSibling (meta) {
+      if (meta.parent) {
+        let siblings = meta.parent.children
+        let selfIndex = siblings.indexOf(meta)
+        if (selfIndex > 0) {
+          return siblings[selfIndex - 1]
+        }
+      }
+      else {
+        let key = meta.key
+        let siblingNodes = this.nodes
+        let selfIndex = siblingNodes.findIndex(v => v[this.nodeKey] === key)
+        if (selfIndex > 0) {
+          return this.meta[siblingNodes[selfIndex - 1][this.nodeKey]]
+        }
+      }
+      return null
     }
   },
 
@@ -646,7 +852,8 @@ export default Vue.extend({
 
     return h(
       'div', {
-        class: this.classes
+        class: this.classes,
+        attrs: { role: 'tree' }
       },
       children.length === 0
         ? (
@@ -660,5 +867,25 @@ export default Vue.extend({
 
   created () {
     this.defaultExpandAll === true && this.expandAll()
+  },
+
+  mounted () {
+    if (this.arrowNavigation) {
+      this.innerCursor = this.cursor
+      if (this.innerCursor == null && this.nodes.length !== 0) {
+        this.innerCursor = this.nodes[0][this.nodeKey]
+      }
+    }
+  },
+
+  updated () {
+    if (this.arrowNavigation) {
+      let cursor = this.innerCursor
+      if ((cursor == null || this.meta[cursor] === void 0) && this.nodes.length !== 0) {
+        cursor = this.nodes[0][this.nodeKey]
+      }
+      this.__blur(cursor)
+    }
   }
+
 })

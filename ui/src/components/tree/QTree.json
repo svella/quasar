@@ -156,6 +156,21 @@
       "desc": "Override default such label for when no nodes are available due to filtering",
       "examples": [ "No results" ],
       "category": "content"
+    },
+
+    "arrowNavigation": {
+      "type": "Boolean",
+      "desc": "Allows keyboard interaction to conform with WAI-ARIA Authoring Practices 1.1, Section 3.25",
+      "examples": [ "No results" ],
+      "category": "behavior"
+    },
+
+    "cursor": {
+      "type": "Any",
+      "desc": "Key of the current node for arrowNavigation",
+      "sync": true,
+      "examples": [ ":cursor.sync=\"cursor\"" ],
+      "category": "state"
     }
   },
 
@@ -390,6 +405,17 @@
         "target": {
           "type": "Any",
           "desc": "The selected node key",
+          "examples": [ "Node 1" ]
+        }
+      }
+    },
+
+    "update:cursor": {
+      "desc": "Emitted when cursor node changes; Used by Vue on 'cursor' synched prop",
+      "params": {
+        "target": {
+          "type": "Any",
+          "desc": "The cursor node key",
           "examples": [ "Node 1" ]
         }
       }

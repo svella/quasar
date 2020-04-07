@@ -17,6 +17,7 @@
             <q-toggle v-model="dark" label="On dark background" :false-value="null" />
             <q-toggle v-model="selectableNodes" label="Selectable nodes" />
             <q-toggle v-model="noConnectors" label="No connectors" />
+            <q-toggle v-model="arrowNavigation" label="Arrow Navigation" />
           </div>
           <div class="col-xs-12 col-md-4">
             <q-input v-model="filter" label="Filter" />
@@ -29,6 +30,9 @@
           </div>
           <div v-if="selectableNodes" class="col-xs-12 col-md-6" style="min-height: 60px">
             <span class="text-bold">Selected</span>:<br>{{ selected }}
+          </div>
+          <div v-if="arrowNavigation" class="col-xs-12 col-md-6" style="min-height: 60px">
+            <span class="text-bold">Cursor</span>:<br>{{ cursor }}
           </div>
           <div class="col-xs-12 col-md-6">
             <q-btn @click="getNodeByKey" no-caps label="getNodeByKey test" />
@@ -51,6 +55,8 @@
           :color="color"
           :filter="filter"
           :no-connectors="noConnectors"
+          :arrowNavigation="arrowNavigation"
+          :cursor.sync="cursor"
           @lazy-load="onLazyLoad"
         >
           <!--
@@ -144,6 +150,8 @@ export default {
       accordion: false,
       filter: '',
       defaultExpandAll: false,
+      arrowNavigation: true,
+      cursor: null,
       nodes: [
         {
           label: 'Node 1 - filter',
