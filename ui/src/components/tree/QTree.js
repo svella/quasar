@@ -236,7 +236,7 @@ export default Vue.extend({
     },
 
     cursor (val) {
-      this.__blur(val)
+      this.__setCursor(val)
     }
   },
 
@@ -497,12 +497,9 @@ export default Vue.extend({
         h('div', {
           staticClass: 'q-tree__node-header relative-position row no-wrap items-center',
           class: {
-            'q-tree__node--link q-hoverable q-focusable': meta.link,
+            'q-tree__node--link q-hoverable q-focusable': meta.link || this.arrowNavigation,
             'q-tree__node--selected': meta.selected,
-            'q-tree__node--disabled': meta.disabled,
-            'q-tree__node--link q-hoverable q-focusable q-manual-focusable': this.arrowNavigation,
-            'q-manual-focusable--focused': this.arrowNavigation && meta.key === this.innerCursor
-
+            'q-tree__node--disabled': meta.disabled
           },
           attrs: {
             tabindex: meta.tabindex,
@@ -515,6 +512,7 @@ export default Vue.extend({
             'aria-disabled': meta.disabled,
             'aria-owns': childGroupUid
           },
+          ref: this.arrowNavigation ? `focusTarget_${meta.key}` : void 0,
           on: {
             click: (e) => {
               this.__onClick(node, meta, e)
@@ -561,7 +559,11 @@ export default Vue.extend({
             }
           }
         }, [
-          h('div', { staticClass: 'q-focus-helper', attrs: { tabindex: -1 }, ref: `blurTarget_${meta.key}` }),
+          h('div', {
+            staticClass: 'q-focus-helper',
+            attrs: { tabindex: !this.arrowNavigation ? -1 : void 0 },
+            ref: !this.arrowNavigation ? `blurTarget_${meta.key}` : void 0
+          }),
 
           meta.lazy === 'loading'
             ? h(QSpinner, {
@@ -653,17 +655,25 @@ export default Vue.extend({
 
     __blur (key) {
       const blurTarget = this.$refs[`blurTarget_${key}`]
-      if (blurTarget !== void 0) {
-        blurTarget.focus()
-        if (this.arrowNavigation) {
-          this.innerCursor = key
-          this.$emit('update:cursor', key)
+      blurTarget !== void 0 && blurTarget.focus()
+    },
+
+    __setCursor (key, focus) {
+      if (this.arrowNavigation) {
+        this.innerCursor = key !== void 0 ? key : null
+        this.$emit('update:cursor', key)
+        if (focus) {
+          const focusTarget = this.$refs[`focusTarget_${key}`]
+          if (focusTarget !== void 0) {
+            focusTarget.focus()
+          }
         }
       }
     },
 
     __onClick (node, meta, e, keyboard) {
       keyboard !== true && this.__blur(meta.key)
+      this.__setCursor(meta.key, true)
 
       if (this.hasSelection) {
         if (meta.selectable) {
@@ -684,6 +694,7 @@ export default Vue.extend({
         stopAndPrevent(e)
       }
       keyboard !== true && this.__blur(meta.key)
+      this.__setCursor(meta.key, true)
       this.setExpanded(meta.key, !meta.expanded, node, meta)
     },
 
@@ -725,7 +736,7 @@ export default Vue.extend({
       }
       else if (meta.parent) {
         stopAndPrevent(e)
-        this.__blur(meta.parent.key)
+        this.__setCursor(meta.parent.key, true)
       }
     },
 
@@ -734,7 +745,7 @@ export default Vue.extend({
         if (meta.expanded) {
           if (meta.children.length > 0) {
             stopAndPrevent(e)
-            this.__blur(meta.children[0].key)
+            this.__setCursor(meta.children[0].key, true)
           }
         }
         else {
@@ -748,7 +759,7 @@ export default Vue.extend({
       let previous = this.__findPrevious(meta)
       if (previous) {
         stopAndPrevent(e)
-        previous && this.__blur(previous.key)
+        previous && this.__setCursor(previous.key, true)
       }
     },
 
@@ -756,14 +767,14 @@ export default Vue.extend({
       let next = this.__findNext(meta)
       if (next) {
         stopAndPrevent(e)
-        this.__blur(next.key)
+        this.__setCursor(next.key, true)
       }
     },
 
     __onHome (node, meta, e) {
       stopAndPrevent(e)
       if (this.nodes.length > 0) {
-        this.__blur(this.nodes[0][this.nodeKey])
+        this.__setCursor(this.nodes[0][this.nodeKey], true)
       }
     },
 
@@ -774,7 +785,7 @@ export default Vue.extend({
         while (last.isParent && last.expanded && last.children.length > 0) {
           last = last.children[last.children.length - 1]
         }
-        this.__blur(last.key)
+        this.__setCursor(last.key, true)
       }
     },
 
@@ -869,22 +880,29 @@ export default Vue.extend({
     this.defaultExpandAll === true && this.expandAll()
   },
 
-  mounted () {
+  beforeMount () {
     if (this.arrowNavigation) {
-      this.innerCursor = this.cursor
-      if (this.innerCursor == null && this.nodes.length !== 0) {
-        this.innerCursor = this.nodes[0][this.nodeKey]
+      let cursor = this.meta[this.cursor] !== void 0 ? this.cursor : null
+      if (cursor === null) {
+        cursor = cursor = this.meta[this.selected] !== void 0 ? this.selected : null
       }
+      if (cursor === null) {
+        cursor = cursor = this.meta[this.nodes[0][this.nodeKey]] !== void 0 ? this.nodes[0][this.nodeKey] : null
+      }
+      this.__setCursor(cursor)
     }
   },
 
   updated () {
     if (this.arrowNavigation) {
-      let cursor = this.innerCursor
-      if ((cursor == null || this.meta[cursor] === void 0) && this.nodes.length !== 0) {
-        cursor = this.nodes[0][this.nodeKey]
+      let cursor = this.meta[this.innerCursor] !== void 0 ? this.innerCursor : null
+      if (cursor === null) {
+        cursor = cursor = this.meta[this.selected] !== void 0 ? this.selected : null
       }
-      this.__blur(cursor)
+      if (cursor === null) {
+        cursor = cursor = this.meta[this.nodes[0][this.nodeKey]] !== void 0 ? this.nodes[0][this.nodeKey] : null
+      }
+      cursor !== this.innerCursor && this.__setCursor(cursor)
     }
   }
 
